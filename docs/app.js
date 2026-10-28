@@ -11,12 +11,12 @@ import {
   savings,
   usedTokens,
   assert,
-} from "./shared/domain.js";
-import { collectRepository } from "./shared/github.js";
-import { collectSource } from "./shared/github-sources.js";
-import { HEADERS, toCSV, importEvents } from "./shared/csv.js";
-import { demoWorkspace } from "./demo.js";
-import { shell, activityTable } from "./views.js";
+} from "./shared/domain.js?v=921d4f1575f1";
+import { collectRepository } from "./shared/github.js?v=921d4f1575f1";
+import { collectSource } from "./shared/github-sources.js?v=921d4f1575f1";
+import { HEADERS, toCSV, importEvents } from "./shared/csv.js?v=921d4f1575f1";
+import { demoWorkspace } from "./demo.js?v=921d4f1575f1";
+import { shell, activityTable } from "./views.js?v=921d4f1575f1";
 import {
   esc,
   fmt,
@@ -32,7 +32,7 @@ import {
   select,
   option,
   terms,
-} from "./ui.js";
+} from "./ui.js?v=921d4f1575f1";
 const KEY = "worklens.workspace.v1",
   MODE = "worklens.mode.v1",
   REMOTE = "worklens.backend.v1";

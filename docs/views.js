@@ -4,7 +4,7 @@ import {
   usedTokens,
   projectBriefs,
   safeUrl,
-} from "./shared/domain.js";
+} from "./shared/domain.js?v=921d4f1575f1";
 import {
   esc,
   fmt,
@@ -20,7 +20,7 @@ import {
   select,
   option,
   terms,
-} from "./ui.js";
+} from "./ui.js?v=921d4f1575f1";
 const headings = {
   overview: [
     "Overview",

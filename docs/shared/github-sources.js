@@ -1,5 +1,5 @@
-import { assert, githubLogin, repository } from "./domain.js";
-import { collectRepository } from "./github.js";
+import { assert, githubLogin, repository } from "./domain.js?v=921d4f1575f1";
+import { collectRepository } from "./github.js?v=921d4f1575f1";
 export async function discoverRepositories(
   type,
   login,

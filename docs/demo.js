@@ -1,4 +1,4 @@
-import { emptyWorkspace } from "./shared/domain.js";
+import { emptyWorkspace } from "./shared/domain.js?v=921d4f1575f1";
 export function demoWorkspace() {
   const s = emptyWorkspace();
   s.name = "Northstar Digital";

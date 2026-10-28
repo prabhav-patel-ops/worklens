@@ -1,4 +1,4 @@
-import { assert, validateEvent } from "./domain.js";
+import { assert, validateEvent } from "./domain.js?v=921d4f1575f1";
 export function parseCSV(input) {
   assert(
     typeof input === "string" && input.length <= 10e6,
