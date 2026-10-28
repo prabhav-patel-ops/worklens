@@ -33,3 +33,9 @@ No paid provider call, private customer repository credential, enterprise identi
 On 26 October 2026, 36 automated tests passed, JavaScript syntax checks passed and the static build completed. All eleven screens rendered with example and empty workspaces. In the local browser, the dashboard layout was inspected, switching to real data kept the example separate, an owner account was saved, the real public prabhav-patel-ops/worklens repository was connected, the initial commit source link was inspected, repeat sync kept one event, and a Reviewed note survived that sync. The savings screen reproduced the original worked example: USD 18 net monthly cash benefit, USD 10 after review-time valuation and 3.3-month setup payback.
 
 Published-site verification is performed after GitHub Pages finishes its deployment. Small-screen browser coverage, live paid AI and private-token acceptance remain unverified.
+
+## Account discovery and identity update
+
+Additional controlled tests cover discovery pagination and its 500-repository bound, credential owner checks, rotating scans and failed-project fairness, employee attribution and preserved reviews. OAuth tests cover verified work email, active membership, wrong identities, one-use state/invitations and no persisted identity token. They do not represent a live activated OAuth application or production company authorization.
+
+On 29 October 2026, all 51 tests passed and syntax checks passed. Local browser acceptance discovered six real public repositories from the personal account name alone and showed two collected/four pending; the discovered repository list and identity policy controls were checked. Live OAuth and private credentials remain unactivated.

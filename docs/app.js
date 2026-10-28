@@ -13,6 +13,7 @@ import {
   assert,
 } from "./shared/domain.js";
 import { collectRepository } from "./shared/github.js";
+import { collectSource } from "./shared/github-sources.js";
 import { HEADERS, toCSV, importEvents } from "./shared/csv.js";
 import { demoWorkspace } from "./demo.js";
 import { shell, activityTable } from "./views.js";
@@ -264,7 +265,7 @@ function accountForm(id) {
   const a = s.accounts.find((a) => a.id === id);
   form(
     a ? "Edit account" : "Add an account",
-    `<div class="form-grid">${field("Full name or service name", "name", a?.name || "", "text", 'required maxlength="100"')}${field("Team", "team", a?.team || "", "text", 'required maxlength="100"')}${field("Role", "role", a?.role || "", "text", 'required maxlength="100"')}${field("GitHub username (optional)", "github", a?.github || "", "text", 'pattern="[a-zA-Z0-9-]{1,39}" maxlength="39"')}${field("Monthly managed token allowance", "limit", a?.limit ?? 250000, "number", 'required min="0" step="1"')}</div><p class="form-note mt">Use the exact GitHub login without @. The owner assigns this mapping; it is not employee authentication.</p>`,
+    `<div class="form-grid">${field("Full name or service name", "name", a?.name || "", "text", 'required maxlength="100"')}${field("Team", "team", a?.team || "", "text", 'required maxlength="100"')}${field("Role", "role", a?.role || "", "text", 'required maxlength="100"')}${field("Work email (optional until verification)", "email", a?.email || "", "email", 'maxlength="254"')}${field("GitHub username (optional)", "github", a?.github || "", "text", 'pattern="[a-zA-Z0-9-]{1,39}" maxlength="39"')}${field("Monthly managed token allowance", "limit", a?.limit ?? 250000, "number", 'required min="0" step="1"')}</div><p class="form-note mt">Use the exact GitHub login without @. Once the company organization is connected, adding an employee maps their retained activity automatically. This is an unverified owner mapping until the employee completes GitHub identity verification.</p>`,
     async (d, revision) => {
       await command(
         "account",
@@ -282,7 +283,7 @@ function profile(id) {
     t = totals(s, events);
   dialog(
     a.name,
-    `<div class="person-top">${avatar(a.name)}<div><h3>${esc(a.team)}</h3><p>${esc(a.role)} ${a.github ? "· @" + esc(a.github) : ""}</p></div></div><div class="evidence"><div><dt>Observed tokens</dt><dd>${fmt(t.tokens)}</dd></div><div><dt>Estimated API cost</dt><dd>${t.priced ? money(t.cost) : "Not priced"}</dd></div><div><dt>Monthly managed allowance</dt><dd>${fmt(usedTokens(s, id))} / ${fmt(a.limit)}</dd></div><div><dt>Open review questions</dt><dd>${t.reviews}</dd></div></div><h3>Recent work evidence</h3>${
+    `<div class="person-top">${avatar(a.name)}<div><h3>${esc(a.team)}</h3><p>${esc(a.role)} ${a.github ? "· @" + esc(a.github) : ""}</p></div></div><div class="evidence"><div><dt>Observed tokens</dt><dd>${fmt(t.tokens)}</dd></div><div><dt>Estimated API cost</dt><dd>${t.priced ? money(t.cost) : "Not priced"}</dd></div><div><dt>Monthly managed allowance</dt><dd>${fmt(usedTokens(s, id))} / ${fmt(a.limit)}</dd></div><div><dt>Open review questions</dt><dd>${t.reviews}</dd></div></div><p class="note">${esc(a.email || "No email added")} · ${mode === "remote" && a.identity ? "GitHub verified " + esc(date(a.identity.verifiedAt)) : "Unverified owner mapping"}</p><h3>Recent work evidence</h3>${
       events
         .slice(0, 6)
         .map(
@@ -290,7 +291,7 @@ function profile(id) {
             `<p>${button(esc(e.title), "event", "link", e.id)}<br><small>${esc(e.project)} · ${esc(date(e.time))}</small></p>`,
         )
         .join("") || "<p>No observed records yet.</p>"
-    }<div class="form-footer">${button("Edit account", "account", "primary", id)}</div>`,
+    }<div class="form-footer">${button("Discover owned repositories", "connect-personal", "small", id)} ${button("Verify GitHub identity", "identity-invite", "small", id)} ${button("Edit account", "account", "primary", id)}</div>`,
   );
 }
 function eventDialog(id) {
@@ -322,44 +323,120 @@ function projectDialog(name) {
     }<p class="note">This brief describes observed activity. Completion, blockers and quality require additional evidence.</p>`,
   );
 }
-function connectForm() {
+function connectForm(personalLogin = "") {
   if (mode === "demo") {
     dialog(
       "Start with your own workspace",
-      "<p>Real connections belong in your own workspace, separately from this fictional example.</p>" +
+      "<p>Real GitHub connections belong in your own workspace.</p>" +
         button("Use my own data", "real", "primary"),
     );
     return;
   }
   form(
-    "Connect GitHub",
-    `${field("Repository", "repository", "", "text", 'required placeholder="owner/repository" maxlength="140"')}${mode === "remote" ? `<div class="mt">${field("Read-only token (private repositories only)", "token", "", "password", 'autocomplete="off" maxlength="1000"')}</div><p class="form-note mt">Only the backend retains a private token, encrypted and bound to this connection. Grant only Contents: read and Pull requests: read.</p>` : '<p class="form-note mt">Public repositories need no token. To connect a private repository, configure the included backend first.</p>'}<p class="form-note mt">Worklens reads metadata, authors, titles and source links. It does not read AI token counts from GitHub.</p>`,
+    "Connect a GitHub account or organization",
+    `${select("Connect", "connectionType", option("organization", "Company organization", personalLogin ? "user" : "organization") + option("user", "Personal or employee GitHub account", personalLogin ? "user" : "organization") + option("repository", "One repository (advanced)", personalLogin ? "user" : "organization"))}<div class="mt">${field("GitHub name (or owner/repository for one repository)", "target", personalLogin, "text", 'required maxlength="140" placeholder="your-company or your-username"')}</div>${mode === "remote" ? `<div class="mt">${field("Approved read-only token (optional private access)", "token", "", "password", 'autocomplete="off" maxlength="1000"')}</div>` : ""}<p class="form-note mt">Enter the organization name once to discover its accessible repositories automatically, including newly accessible projects on future syncs. Add employee usernames under People &amp; accounts to map their activity.</p><p class="form-note mt">${mode === "remote" ? "For private access, the company approves the token scope. An employee-account token must belong to that account. This does not authenticate employees." : "This public website discovers public repositories only. Private sources and verified employee sign-in require your connected backend."}</p><p class="form-note mt">Discovery supports up to 500 repositories per source and marks larger lists partial. Activity is collected in visible rotating batches, not all at once. Supported activity currently includes commits and pull requests; this is not every GitHub action.</p>`,
     async (d, revision) => {
       requireReal();
-      if (mode === "remote") {
-        const r = await api("/api/connection", { ...d, revision });
-        s = validateWorkspace(r.workspace);
-        render();
+      if (d.connectionType === "repository") {
+        if (mode === "remote") {
+          const r = await api("/api/connection", {
+            repository: d.target,
+            token: d.token || "",
+            revision,
+          });
+          s = validateWorkspace(r.workspace);
+          render();
+        } else {
+          const found = await collectRepository(d.target, s.accounts);
+          await command(
+            "connection",
+            {
+              repository: d.target,
+              description: found.description,
+              private: false,
+            },
+            revision,
+          );
+          const c = s.connections.find(
+            (c) => c.repository === d.target.toLowerCase(),
+          );
+          await command("github", { id: c.id, ...found });
+        }
       } else {
-        const found = await collectRepository(d.repository, s.accounts);
-        assert(!found.private, "Private repositories require the backend.");
-        await command(
-          "connection",
-          {
-            repository: d.repository,
-            description: found.description,
-            private: false,
-          },
-          revision,
-        );
-        const c = s.connections.find(
-          (c) => c.repository === d.repository.toLowerCase(),
-        );
-        await command("github", { id: c.id, ...found });
+        if (mode === "remote") {
+          const r = await api(
+            "/api/github-source",
+            {
+              type: d.connectionType,
+              login: d.target,
+              token: d.token || "",
+              revision,
+            },
+            { long: true },
+          );
+          s = validateWorkspace(r.workspace);
+          render();
+        } else {
+          const result = await collectSource(
+            { type: d.connectionType, login: d.target, repositories: [] },
+            s.accounts,
+          );
+          await command(
+            "github-source",
+            { type: d.connectionType, login: d.target, visibility: "public" },
+            revision,
+          );
+          const c = s.githubSources.find(
+            (c) =>
+              c.login === d.target.toLowerCase() && c.type === d.connectionType,
+          );
+          await command("github-source-sync", { id: c.id, ...result });
+        }
       }
-      toast("Repository connected. Open its project to verify the evidence.");
+      toast(
+        "GitHub connected. Repositories were discovered automatically. Check scan coverage in Connections.",
+      );
     },
-    "Verify & connect",
+    "Discover & connect",
+  );
+}
+async function syncSource(id, quiet = false) {
+  if (mode === "demo") {
+    if (!quiet)
+      toast(
+        "Example data is separate. Connect a real GitHub account in your workspace.",
+      );
+    return;
+  }
+  if (syncing) return;
+  syncing = true;
+  try {
+    if (mode === "remote") {
+      const r = await api("/api/github-source-sync", { id }, { long: true });
+      s = validateWorkspace(r.workspace);
+      render();
+    } else {
+      const c = (s.githubSources || []).find((c) => c.id === id);
+      assert(c, "GitHub source no longer exists.");
+      const result = await collectSource(c, s.accounts);
+      await command("github-source-sync", { id, ...result });
+    }
+    if (!quiet)
+      toast(
+        "Discovery refreshed and the next repository batch was checked. See coverage for pending work.",
+      );
+  } catch (error) {
+    if (!quiet) throw error;
+  } finally {
+    syncing = false;
+  }
+}
+function sourceDetails(id) {
+  const c = (s.githubSources || []).find((c) => c.id === id);
+  if (!c) return;
+  dialog(
+    c.login + " · discovered repositories",
+    `<p>${esc(c.coverage || "No activity collected yet.")}</p>${c.lastError ? `<div class="banner warning">${esc(c.lastError)}</div>` : ""}<div class="table-wrap"><table><thead><tr><th>PROJECT</th><th>LAST CHECK</th><th>STATUS</th></tr></thead><tbody>${c.repositories.map((r) => `<tr><td>${button(esc(r.name), "project", "link", r.name)}</td><td>${esc(date(r.syncedAt))}</td><td>${esc(r.error || (r.syncedAt ? "Snapshot collected" : "Pending scan"))}</td></tr>`).join("")}</tbody></table></div><p class="note mt">Local public mode checks two repositories per pass to reduce API use. A connected private backend checks up to five with credentials. New or unchecked projects are scanned first, then older checks rotate.</p><div class="form-footer">${button("Sync next batch", "source-sync", "primary", id)}</div>`,
   );
 }
 async function sync(id, quiet = false) {
@@ -389,6 +466,38 @@ async function sync(id, quiet = false) {
   } finally {
     syncing = false;
   }
+}
+function identityPolicyForm() {
+  const policy = s.identityPolicy || {
+    mode: "personal",
+    domain: "",
+    organization: "",
+  };
+  form(
+    "Employee identity verification",
+    `${select("Verification mode", "mode", option("personal", "Personal testing", policy.mode) + option("company", "Company work identities", policy.mode))}<div class="form-grid mt">${field("Company email domain (company mode)", "domain", policy.domain, "text", 'placeholder="company.com" maxlength="150"')}${field("Company GitHub organization (company mode)", "organization", policy.organization, "text", 'placeholder="your-company" maxlength="39"')}</div><p class="form-note mt">Company verification requires the invited GitHub username, a GitHub-verified email at this exact domain and active membership in the organization. Typing an address is not verification. Changing this policy clears existing verification badges.</p><p class="form-note mt">Verified sign-in requires the connected backend and a configured GitHub OAuth application. Public discovery still works without it, with clearly unverified mappings.</p>`,
+    async (d, revision) => {
+      await command("identity-policy", d, revision);
+      toast(
+        "Identity rules saved. Invite each employee to verify through GitHub.",
+      );
+    },
+  );
+}
+async function identityInvite(id) {
+  if (mode !== "remote" || !capabilities.githubIdentity) {
+    dialog(
+      "Verified employee sign-in needs activation",
+      "<p>The operator must activate the private backend and its GitHub sign-in connection first. Public account and organization discovery already work, but a typed username or work email is only an unverified owner mapping.</p>" +
+        button("Connect backend", "backend", "primary"),
+    );
+    return;
+  }
+  const r = await api("/api/employee-invite", { accountId: id });
+  dialog(
+    "Employee verification invitation",
+    `<p>Send this one-use link directly to the employee. It expires at ${esc(date(r.expiresAt))}. The employee must sign in to the exact GitHub username assigned to this account and approve identity verification.</p><label>Private invitation link<input value="${esc(r.url)}" readonly></label><p class="form-note mt">The result will appear on this profile after a workspace refresh. The link does not grant the employee owner access to Worklens.</p><div class="form-footer">${button("Close", "close", "primary")}</div>`,
+  );
 }
 function backendForm() {
   form(
@@ -543,6 +652,7 @@ function restoreDialog() {
       const file = modal.querySelector("input[type=file]").files[0];
       assert(file && file.size <= 12e6, "Choose a backup up to 12 MB.");
       const restored = validateWorkspace(JSON.parse(await file.text()));
+      for (const a of restored.accounts) a.identity = null;
       assert(!restored.demo, "Example data cannot replace a real workspace.");
       assert(
         !restored.events.some(
@@ -618,6 +728,38 @@ async function handleAction(action, id) {
       break;
     case "connect":
       connectForm();
+      break;
+    case "connect-personal": {
+      const a = s.accounts.find((a) => a.id === id);
+      connectForm(a?.github || "");
+      break;
+    }
+    case "source-sync":
+      await syncSource(id);
+      if (modal.open) sourceDetails(id);
+      break;
+    case "source-details":
+      sourceDetails(id);
+      break;
+    case "source-disconnect": {
+      const c = (s.githubSources || []).find((c) => c.id === id);
+      assert(c, "Source no longer exists.");
+      form(
+        "Disconnect GitHub source",
+        `<p>Stop discovery and future collection for ${esc(c.login)}? Existing event evidence and reviews remain.</p>`,
+        async (_, revision) => {
+          await command("github-source-disconnect", { id }, revision);
+          toast("Source disconnected. Historical evidence retained.");
+        },
+        "Disconnect",
+      );
+      break;
+    }
+    case "identity-policy":
+      identityPolicyForm();
+      break;
+    case "identity-invite":
+      await identityInvite(id);
       break;
     case "sync":
       await sync(id);
@@ -874,7 +1016,9 @@ setInterval(async () => {
 setInterval(async () => {
   if (document.hidden || modal.open || syncing || mode === "demo") return;
   for (const c of s.connections) await sync(c.id, true);
-}, 60000);
+  if (mode === "local")
+    for (const c of s.githubSources || []) await syncSource(c.id, true);
+}, 900000);
 render();
 if (mode === "remote")
   refresh().catch((error) => {

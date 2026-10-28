@@ -21,8 +21,10 @@ export class Store {
       .run(JSON.stringify(emptyWorkspace()));
   }
   read() {
-    return JSON.parse(
-      this.db.prepare("SELECT json FROM workspace WHERE id=1").get().json,
+    return validateWorkspace(
+      JSON.parse(
+        this.db.prepare("SELECT json FROM workspace WHERE id=1").get().json,
+      ),
     );
   }
   save(s) {

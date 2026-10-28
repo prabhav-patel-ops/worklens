@@ -42,12 +42,16 @@ Prompt and response bodies are not persisted. The answer is returned only to the
 
 ## GitHub evidence
 
-Connections support five repositories. Collection reads repository metadata, up to 100 default-branch commits and 100 pull requests sorted by recent update. Full windows with a next page are marked partial. Event identity combines repository, record type and provider SHA/number; reconnecting cannot duplicate the same record. A review note survives upserts. A sync cannot insert events after its connection is removed. Exact GitHub usernames map source authors to owner-assigned accounts.
+Connections support ten account/organization sources, each discovering up to 500 accessible owned repositories, plus five legacy single-repository connections. Each pass rotates through two public or five authenticated projects, choosing new or oldest checked first. Collection reads repository metadata, up to 100 default-branch commits and 100 pull requests sorted by recent update. Full windows with a next page are marked partial. Event identity combines repository, record type and provider SHA/number; reconnecting cannot duplicate the same record. A review note survives upserts. A sync cannot insert events after its connection is removed. Exact GitHub usernames map source authors to owner-assigned accounts.
 
 Project briefs count the retained commits, pull requests and explicitly attributed managed requests. They include source descriptions and contributors. They do not infer blockers, accepted work, full company status, time saved or knowledge gained.
 
 ## Differences from the lost hosted implementation
 
-The original used a private Sites/Cloudflare Worker and D1. The new public Pages frontend requires a different hosting split, so this rebuild uses an optional portable Node/SQLite server. The backend is included in full; it is not hosted on Pages. The latest original chat described hourly background collection, but this rebuild deliberately labels collection as page-open only. Adding unattended collection requires a separately hosted scheduler and operator authorization.
+The original used a private Sites/Cloudflare Worker and D1. The new public Pages frontend requires a different hosting split, so this rebuild uses an optional portable Node/SQLite server. The backend is included in full; it is not hosted on Pages. The latest original chat described hourly background collection, and this release includes a 15-minute in-process backend scheduler. Browser-only collection requires an open page. The backend must be separately deployed and running for unattended collection.
 
 The original planning modules are represented by editable, evidence-oriented records, not proprietary Workhelix models, vendor benchmarks or inferred skill scores. The savings worksheet is a new functional implementation of the original PDF's manual comparison.
+
+## Employee verification
+
+Hashed expiring invitations and one-use authorization states protect the optional GitHub OAuth identity flow. It checks the invited username, verified email and active company membership. Proofs are snapshots, not continuing employment checks. Policy changes, identity edits and restores clear proofs; restores also invalidate invitations. Verification does not create employee owner sessions or provide role authorization. Identity tokens are not persisted; encrypted repository credentials are separate.

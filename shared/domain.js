@@ -37,6 +37,8 @@ export function emptyWorkspace() {
     name: "My workspace",
     accounts: [],
     connections: [],
+    githubSources: [],
+    identityPolicy: { mode: "personal", domain: "", organization: "" },
     events: [],
     planning: [],
     settings: { companyLimit: 1000000, retentionDays: 90, rates: [] },
@@ -58,6 +60,36 @@ export function repository(value) {
     "Enter a GitHub repository as owner/repository.",
   );
   return value.toLowerCase();
+}
+export function githubLogin(value) {
+  assert(
+    typeof value === "string" &&
+      /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,38})$/.test(value),
+    "Enter a GitHub username or organization name without @ or a URL.",
+  );
+  return value.toLowerCase();
+}
+export function identityPolicyKey(
+  policy = { mode: "personal", domain: "", organization: "" },
+) {
+  return `${policy.mode}:${policy.domain}:${policy.organization}`;
+}
+export function sourceRepositories(state) {
+  const repos = new Map(state.connections.map((c) => [c.repository, c]));
+  for (const source of state.githubSources || [])
+    for (const repo of source.repositories)
+      if (!repos.has(repo.name))
+        repos.set(repo.name, {
+          ...repo,
+          repository: repo.name,
+          sourceId: source.id,
+          coverage:
+            repo.coverage ||
+            (repo.syncedAt
+              ? "Bounded source activity window."
+              : "Discovered; activity collection is pending."),
+        });
+  return [...repos.values()];
 }
 export function safeUrl(value) {
   try {
@@ -117,15 +149,16 @@ export function usedTokens(state, accountId, m = month()) {
     );
 }
 export function projectBriefs(state) {
+  const connected = sourceRepositories(state);
   const names = new Set([
-    ...state.connections.map((c) => c.repository),
+    ...connected.map((c) => c.repository),
     ...state.events.map((e) => e.project || "Unassigned"),
   ]);
   return [...names].map((name) => {
     const events = state.events
       .filter((e) => (e.project || "Unassigned") === name)
       .sort((a, b) => b.time.localeCompare(a.time));
-    const c = state.connections.find((c) => c.repository === name);
+    const c = connected.find((c) => c.repository === name);
     const people = [...new Set(events.map((e) => e.accountId).filter(Boolean))];
     return {
       name,
@@ -205,6 +238,21 @@ export function validateEvent(e) {
 }
 export function validateWorkspace(s) {
   assert(s?.schemaVersion === VERSION, "Unsupported workspace format.");
+  s.githubSources ??= [];
+  s.identityPolicy ??= { mode: "personal", domain: "", organization: "" };
+  assert(
+    ["personal", "company"].includes(s.identityPolicy.mode),
+    "Invalid identity mode.",
+  );
+  if (s.identityPolicy.mode === "company") {
+    assert(
+      /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/.test(
+        s.identityPolicy.domain,
+      ),
+      "Enter a valid company email domain.",
+    );
+    githubLogin(s.identityPolicy.organization);
+  }
   integer(s.revision, "Workspace revision");
   text(s.name, "Workspace name", 100);
   for (const key of ["accounts", "connections", "events", "planning"])
@@ -226,6 +274,11 @@ export function validateWorkspace(s) {
     text(a.team, "Team", 100);
     text(a.role, "Role", 100);
     integer(a.limit, "Account limit");
+    if (a.email)
+      assert(
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a.email),
+        "Enter a valid work email address.",
+      );
     assert(typeof a.paused === "boolean", "Invalid account pause.");
     if (a.github)
       assert(/^[a-zA-Z0-9-]{1,39}$/.test(a.github), "Invalid GitHub login.");
@@ -238,6 +291,41 @@ export function validateWorkspace(s) {
   for (const c of s.connections) {
     repository(c.repository);
     assert(!("token" in c), "A backup must not contain a GitHub token.");
+  }
+  assert(
+    Array.isArray(s.githubSources) && s.githubSources.length <= 10,
+    "Connect up to ten GitHub accounts or organizations.",
+  );
+  assert(
+    new Set(s.githubSources.map((c) => `${c.type}:${c.login}`)).size ===
+      s.githubSources.length,
+    "Duplicate GitHub account connections.",
+  );
+  for (const c of s.githubSources) {
+    text(c.id, "Source ID", 100);
+    githubLogin(c.login);
+    assert(
+      ["user", "organization"].includes(c.type),
+      "Invalid GitHub source type.",
+    );
+    assert(!("token" in c), "A backup must not contain a GitHub token.");
+    assert(
+      Array.isArray(c.repositories) && c.repositories.length <= 500,
+      "Source repository limit exceeded.",
+    );
+    assert(
+      new Set(c.repositories.map((r) => r.name)).size === c.repositories.length,
+      "Duplicate discovered repositories.",
+    );
+    for (const repo of c.repositories) {
+      repository(repo.name);
+      assert(
+        repo.name.startsWith(c.login + "/"),
+        "Repository is outside the connected owner.",
+      );
+      text(repo.description || "", "Repository description", 1000, true);
+    }
+    integer(c.cursor || 0, "Repository scan cursor", 500);
   }
   assert(
     new Set(s.events.map((e) => e.id)).size === s.events.length,
@@ -292,19 +380,24 @@ export function applyCommand(
         github: (d.github || "").trim().toLowerCase(),
         limit: integer(d.limit, "Account allowance"),
         paused: existing?.paused ?? false,
+        email: text(d.email || "", "Work email", 254, true).toLowerCase(),
+        identity:
+          existing?.github === (d.github || "").trim().toLowerCase() &&
+          (existing?.email || "") === (d.email || "").trim().toLowerCase()
+            ? existing?.identity || null
+            : null,
       };
+      assert(
+        !a.github ||
+          !s.accounts.some(
+            (other) =>
+              other.id !== id && other.github?.toLowerCase() === a.github,
+          ),
+        "This GitHub username is already mapped to another account.",
+      );
       if (existing) Object.assign(existing, a);
       else s.accounts.push(a);
-      for (const e of s.events)
-        if (
-          e.source === "github" &&
-          a.github &&
-          e.author?.toLowerCase() === a.github
-        ) {
-          e.accountId = a.id;
-          if (e.issue === "GitHub author is not mapped to an account.")
-            e.issue = "";
-        }
+      remapGitHub(s);
       break;
     }
     case "pause":
@@ -349,6 +442,74 @@ export function applyCommand(
     case "disconnect":
       s.connections = s.connections.filter((c) => c.id !== d.id);
       break;
+    case "github-source": {
+      const login = githubLogin(d.login);
+      assert(
+        ["user", "organization"].includes(d.type),
+        "Choose account or organization.",
+      );
+      s.githubSources ??= [];
+      let c = s.githubSources.find(
+        (c) => c.login === login && c.type === d.type,
+      );
+      if (!c) {
+        assert(
+          s.githubSources.length < 10,
+          "Connect up to ten GitHub accounts or organizations.",
+        );
+        c = { id: uid(), login, type: d.type, repositories: [], cursor: 0 };
+        s.githubSources.push(c);
+      }
+      c.visibility = d.visibility === "authorized" ? "authorized" : "public";
+      break;
+    }
+    case "github-source-sync": {
+      const c = s.githubSources.find((c) => c.id === d.id);
+      assert(c, "GitHub source was disconnected during sync.");
+      assert(
+        Array.isArray(d.repositories) && d.repositories.length <= 500,
+        "Invalid discovered repository list.",
+      );
+      const names = new Set(d.repositories.map((r) => repository(r.name)));
+      assert(
+        [...names].every((name) => name.startsWith(c.login + "/")),
+        "A discovered repository is outside the connected owner.",
+      );
+      assert(
+        Array.isArray(d.events) &&
+          d.events.every((e) => e.source === "github" && names.has(e.project)),
+        "Invalid source activity.",
+      );
+      c.repositories = copy(d.repositories);
+      c.cursor = integer(d.cursor, "Repository cursor", 500);
+      c.discoveryComplete = d.discoveryComplete === true;
+      c.coverage = text(d.coverage, "Source coverage", 2000);
+      c.lastSync = now;
+      c.lastError = "";
+      c.visibility = d.visibility === "authorized" ? "authorized" : "public";
+      upsertEvents(s, d.events);
+      remapGitHub(s);
+      break;
+    }
+    case "github-source-disconnect":
+      s.githubSources = (s.githubSources || []).filter((c) => c.id !== d.id);
+      break;
+    case "identity-policy": {
+      const policy = {
+        mode: d.mode,
+        domain: (d.domain || "").trim().toLowerCase(),
+        organization: (d.organization || "").trim().toLowerCase(),
+      };
+      if (policy.mode === "personal") {
+        policy.domain = "";
+        policy.organization = "";
+      }
+      if (identityPolicyKey(policy) !== identityPolicyKey(s.identityPolicy)) {
+        for (const a of s.accounts) a.identity = null;
+      }
+      s.identityPolicy = policy;
+      break;
+    }
     case "github": {
       const c = s.connections.find((c) => c.id === d.id);
       assert(c, "Connection was removed. Sync again after reconnecting.");
@@ -397,6 +558,19 @@ export function applyCommand(
   s.revision++;
   s.updatedAt = now;
   return validateWorkspace(s);
+}
+export function remapGitHub(state) {
+  for (const e of state.events)
+    if (e.source === "github") {
+      const mapped = state.accounts.find(
+        (a) => a.github && a.github.toLowerCase() === e.author?.toLowerCase(),
+      );
+      e.accountId = mapped?.id || "";
+      if (!mapped && !e.issue)
+        e.issue = "GitHub author is not mapped to an account.";
+      if (mapped && e.issue === "GitHub author is not mapped to an account.")
+        e.issue = "";
+    }
 }
 export function savings(d) {
   for (const k of [

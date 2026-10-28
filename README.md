@@ -10,7 +10,7 @@ This is a new implementation based on the original Worklens research, manual, pr
 
 - Responsive overview with period filters, usage charts and account spending.
 - People and service accounts, GitHub username mapping and project briefs.
-- Real collection from up to five public GitHub repositories; stable source IDs and preserved reviews.
+- Connect personal GitHub accounts or company organizations once; automatically discover accessible owned repositories, including new projects on later syncs. Stable source IDs and reviews are preserved.
 - Activity filtering, evidence dialogs, original source links and review history.
 - Model price estimates, allowance settings and account pause configuration.
 - Comparable-work savings worksheet with net cash, review-time value and setup payback shown separately.
@@ -57,6 +57,16 @@ npm run build
 
 The build generates `dist/` and refreshes the committed `docs/` Pages site. After editing `public/` or `shared/`, rebuild and commit `docs/` too. GitHub Pages is configured to publish `main /docs`.
 
+## Account and company setup
+
+For your personal test: add your own GitHub username under People. In Connections choose Connect source, Personal GitHub account, and enter that username. Public owned projects are discovered without entering each repository. Use Sync next batch to check pending projects.
+
+For a company: connect the Company organization by its GitHub name once. Add each employee with their work GitHub username and company email. Matching activity inside connected sources is attributed automatically. A username or email entered by the owner remains unverified.
+
+The included backend supports GitHub verification invitations. Personal mode accepts a verified personal email. Company rules require the invited GitHub username, a matching GitHub-verified work email on the exact configured domain, and active membership in the configured organization. Follow [Deployment](docs/DEPLOYMENT.md) to activate this. Verification confirms identity; it does not provide employee portal roles or authorize private repository access. Verification is a snapshot and does not continuously recheck employment.
+
+Up to ten account/organization sources are supported, with discovery capped at 500 accessible owned repositories per source. Each pass checks two public projects or five with an approved backend credential, rotating new/old checks. Coverage shows pending scans and errors. This collects bounded commits and pull requests, not every GitHub action. The backend includes a 15-minute scheduler while its process runs; Pages alone collects only while open. The published Pages site has no deployed backend or configured OAuth application.
+
 ## Project structure
 
 ```text
@@ -72,9 +82,9 @@ See [Architecture](docs/ARCHITECTURE.md), [Deployment](docs/DEPLOYMENT.md), [Dat
 
 ## Product boundaries
 
-This is an owner-operated pilot. It has no shared employee login, team roles, closed-tab collection, automatic provider invoice reconciliation or personal ChatGPT history connection. Account mapping is assigned by the owner. A normal ChatGPT subscription does not enable API billing or share conversations.
+This is an owner-operated pilot. It has no shared employee login, team roles, automatic provider invoice reconciliation or personal ChatGPT history connection. Account mapping is assigned by the owner. A normal ChatGPT subscription does not enable API billing or share conversations.
 
-GitHub collection reads at most 100 default-branch commits and 100 recently updated pull requests per repository and marks larger windows partial. It is not a complete history or quality measurement. Browser checks occur every minute while visible; connected backend snapshots refresh every 15 seconds when no form is being edited.
+GitHub collection reads at most 100 default-branch commits and 100 recently updated pull requests per repository and marks larger windows partial. It is not a complete history or quality measurement. Browser checks occur every 15 minutes while open; connected backend snapshots refresh every 15 seconds when no form is being edited.
 
 Cost estimates use the model rates currently entered by the owner, including for historical records. Missing rates remain unknown. Cached-token discount tiers are not modeled. Imported reports remain separate and do not alter managed AI allowances. Retention is 30 or 90 days, with the full current UTC month and unresolved reservations kept for budget accounting. Request-ID fingerprints persist to prevent replays; no prompt or answer bodies are retained by Worklens.
 

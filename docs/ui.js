@@ -109,7 +109,7 @@ export const terms = {
   "Project brief":
     "A summary of retained repository activity and explicitly attributed AI requests. Project names come from connected repositories or declared work labels. It cannot establish completion, quality or blockers without human evidence.",
   "Source coverage":
-    "GitHub collection reads up to 100 default-branch commits and 100 recently updated pull requests per repository. Larger windows are marked partial. Frontend collection runs only while the page is open.",
+    "Accounts and organizations discover accessible owned repositories automatically, with a 500-repository discovery bound per source. Two public repositories or five authenticated repositories are checked per rotating pass. Each activity snapshot includes up to 100 default-branch commits and 100 recently updated pull requests. Coverage can be partial.",
   "Net cash benefit":
     "Baseline API spending minus improved API spending, the Worklens fee and hosting. Review-time value is shown separately. A fair before/after comparison requires comparable accepted work and quality.",
   "Account pause":

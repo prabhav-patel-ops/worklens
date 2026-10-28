@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 import { Store } from "./store.mjs";
 import { applyCommand, assert, validateWorkspace } from "../shared/domain.js";
 import { collectRepository } from "../shared/github.js";
+import { collectSource } from "../shared/github-sources.js";
+import { createIdentityInvite, handleIdentityRoute } from "./identity.mjs";
 import { managedRequest, reconcile, recoverPending } from "./ai.mjs";
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const MIME = {
@@ -56,6 +58,7 @@ export function createApp({
       res.end(JSON.stringify(data));
     };
     try {
+      if (await handleIdentityRoute(req, res, url, store, env, fetcher)) return;
       if (url.pathname.startsWith("/api/")) {
         if (origin && origin !== allowedOrigin)
           return send(403, { error: "This website origin is not allowed." });
@@ -91,6 +94,14 @@ export function createApp({
               ai: !!env.OPENAI_API_KEY,
               model: env.OPENAI_MODEL || "gpt-4.1-mini",
               privateGithub: !!env.WORKLENS_ENCRYPTION_KEY,
+              githubIdentity: !!(
+                env.GITHUB_CLIENT_ID &&
+                env.GITHUB_CLIENT_SECRET &&
+                env.GITHUB_CALLBACK_URL
+              ),
+              backgroundGithubMinutes: Number(
+                env.WORKLENS_GITHUB_SYNC_MINUTES || 15,
+              ),
             },
           });
         if (req.method !== "POST")
@@ -107,17 +118,66 @@ export function createApp({
           raw += chunk;
         }
         const d = JSON.parse(raw);
+        if (url.pathname === "/api/employee-invite")
+          return send(200, createIdentityInvite(store, d.accountId, env));
         if (url.pathname === "/api/command") {
           assert(
-            !["github", "connection"].includes(d.type),
+            ![
+              "github",
+              "connection",
+              "github-source",
+              "github-source-sync",
+            ].includes(d.type),
             "Use the verified GitHub connection routes.",
           );
           const s = store.transaction((s) => {
             const next = applyCommand(s, d);
-            if (d.type === "disconnect") store.forget(d.data.id);
+            if (["disconnect", "github-source-disconnect"].includes(d.type))
+              store.forget(d.data.id);
             return store.save(next);
           });
           return send(200, { workspace: s });
+        }
+        if (url.pathname === "/api/github-source") {
+          assert(
+            typeof (d.token || "") === "string" &&
+              (d.token || "").length < 1000,
+            "Invalid GitHub credential.",
+          );
+          const collected = await collectSource(
+            { type: d.type, login: d.login, repositories: [] },
+            store.read().accounts,
+            d.token || "",
+            fetcher,
+          );
+          const next = store.transaction((state) => {
+            let updated = applyCommand(state, {
+              type: "github-source",
+              revision: d.revision,
+              data: {
+                type: d.type,
+                login: d.login,
+                visibility: collected.visibility,
+              },
+            });
+            const source = updated.githubSources.find(
+              (c) => c.type === d.type && c.login === d.login.toLowerCase(),
+            );
+            if (d.token) store.setSecret(source.id, d.token);
+            else store.forget(source.id);
+            updated = applyCommand(updated, {
+              type: "github-source-sync",
+              revision: updated.revision,
+              data: { id: source.id, ...collected },
+            });
+            return store.save(updated);
+          });
+          return send(200, { workspace: next });
+        }
+        if (url.pathname === "/api/github-source-sync") {
+          return send(200, {
+            workspace: await syncGithubSource(store, d.id, fetcher),
+          });
         }
         if (url.pathname === "/api/connection") {
           assert(
@@ -206,8 +266,19 @@ export function createApp({
               "Resolve server reservations before restoring.",
             );
             const restored = structuredClone(d.workspace);
+            for (const a of restored.accounts) a.identity = null;
             restored.revision = current.revision + 1;
             store.db.exec("DELETE FROM secrets; DELETE FROM requests;");
+            for (const table of ["identity_invites", "identity_states"]) {
+              if (
+                store.db
+                  .prepare(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                  )
+                  .get(table)
+              )
+                store.db.exec("DELETE FROM " + table);
+            }
             return store.save(restored);
           });
           return send(200, { workspace: s });
@@ -249,6 +320,40 @@ export function createApp({
   });
   return { server, store };
 }
+export async function syncGithubSource(store, id, fetcher = fetch) {
+  const snapshot = store.read(),
+    source = (snapshot.githubSources || []).find((c) => c.id === id);
+  assert(source, "GitHub source no longer exists.");
+  let result;
+  try {
+    result = await collectSource(
+      source,
+      snapshot.accounts,
+      store.secret(id),
+      fetcher,
+    );
+  } catch (error) {
+    store.transaction((state) => {
+      const current = state.githubSources.find((c) => c.id === id);
+      if (current) {
+        current.lastError =
+          "GitHub sync failed. Check approved access, rate limits and connection availability, then retry.";
+        state.revision++;
+        store.save(state);
+      }
+    });
+    throw error;
+  }
+  return store.transaction((state) =>
+    store.save(
+      applyCommand(state, {
+        type: "github-source-sync",
+        revision: state.revision,
+        data: { id, ...result },
+      }),
+    ),
+  );
+}
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const app = createApp();
   const port = Number(process.env.PORT || 4173);
@@ -261,9 +366,32 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     } catch {}
   }, 30000);
   timer.unref();
+  let scheduledSync = false;
+  const interval =
+    Number(process.env.WORKLENS_GITHUB_SYNC_MINUTES || 15) * 60000;
+  const githubTimer =
+    interval >= 60000
+      ? setInterval(async () => {
+          if (scheduledSync) return;
+          scheduledSync = true;
+          try {
+            for (const source of app.store.read().githubSources || []) {
+              try {
+                await syncGithubSource(app.store, source.id);
+              } catch {
+                /* syncGithubSource records a safe failure message in the workspace. */
+              }
+            }
+          } finally {
+            scheduledSync = false;
+          }
+        }, interval)
+      : null;
+  githubTimer?.unref();
   for (const sig of ["SIGINT", "SIGTERM"])
     process.on(sig, () => {
       clearInterval(timer);
+      if (githubTimer) clearInterval(githubTimer);
       app.server.close(() => {
         app.store.close();
         process.exit(0);

@@ -1,6 +1,6 @@
 {
   "name": "worklens",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "description": "AI usage, work evidence and transparent reviews. Rebuilt from the original Worklens specification.",

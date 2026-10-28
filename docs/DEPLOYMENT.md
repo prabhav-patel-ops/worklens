@@ -31,7 +31,7 @@ Do not commit `.env` or run a database in the public static folder. The backend 
 ## Operator acceptance
 
 - Add an account with your exact GitHub username.
-- Connect a selected public repository. Verify one record on GitHub, then sync twice and confirm one copy.
+- Connect your personal account or company organization and review discovered repositories. Verify one record on GitHub, then sync twice and confirm one copy.
 - Save a review note and sync again; verify the note remains.
 - For a private repository, create a fine-grained, expiring read-only token scoped to that repository. Grant Contents: read and Pull requests: read. Verify it can be read before retaining the connection.
 - Before authorizing paid AI, enter model prices and a small token allowance. Send one short request and compare returned usage against provider records.
@@ -44,4 +44,17 @@ Export the workspace JSON before destructive local changes. This includes accoun
 
 ## Remaining operational work
 
-Company-wide use needs organization identity, separate roles, employee notice and attribution, independent security review, live provider acceptance, operational monitoring, backup exercises and load testing. Unattended background sync is not configured. The Pages release does not make these gates complete.
+Company-wide use needs organization identity, separate roles, employee notice and attribution, independent security review, live provider acceptance, operational monitoring, backup exercises and load testing. The included backend can sync every 15 minutes while its process runs; Pages alone cannot collect with the page closed. The Pages release does not make these gates complete.
+
+## Activate employee GitHub verification
+
+1. Deploy the backend behind HTTPS. Register a GitHub OAuth application in GitHub Settings, Developer settings, OAuth Apps. Its callback must be `https://YOUR-BACKEND/auth/github/callback`.
+2. Configure GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET and that exact GITHUB_CALLBACK_URL on the server. Never place the client secret in Pages or Git. Restart the backend.
+3. Connect the backend in Worklens. Configure identity rules: Personal for testing, or Company with the exact work email domain and organization name.
+4. Add the employee's work GitHub username and email under People. Open their profile and choose Verify GitHub identity. Share the private one-use link directly; it expires after one hour. It does not contain the owner token.
+5. The employee signs into the invited GitHub account and authorizes verification. Company mode checks a GitHub-verified matching company email and active organization membership. Company OAuth restrictions or SAML settings may need administrator approval.
+6. Refresh Worklens to see the verification badge. Employee verification does not grant owner access or provide employee portal roles. Do not share the owner access token.
+
+Scopes are read:user and user:email, plus read:org in company mode. Temporary identity tokens are not persisted. Proofs are snapshots; reverify after employment changes. Identity edits, policy changes and restores clear proofs. Backup restores invalidate outstanding invitations.
+
+Private repository access is separate. Supply an approved fine-grained read-only token through the backend, scoped to the organization and authorized repositories, with Contents: read and Pull requests: read. For personal private discovery the token must belong to that username. Discovery cannot bypass repository permissions. A GitHub App installation is a future alternative, not implemented by this release. Set WORKLENS_GITHUB_SYNC_MINUTES=0 to disable the default 15-minute backend scheduler.

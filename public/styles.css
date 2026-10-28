@@ -1490,3 +1490,7 @@ dialog::backdrop {
     display: inline-flex;
   }
 }
+
+.person-card .flex {
+  flex-wrap: wrap;
+}
